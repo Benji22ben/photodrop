@@ -1,0 +1,1 @@
+`sample.heic` is original generated test artwork (96 × 64 pixels), encoded by libheif's `heif-enc -q 80`. It contains a green background, darker lower rectangle, and cream circle. It contains no personal photos. Tests expect the decoder to retain its dimensions.

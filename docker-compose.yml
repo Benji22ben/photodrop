@@ -1,0 +1,47 @@
+services:
+  converter:
+    build: .
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8000"
+    environment:
+      DATA_DIR: /data
+      MAX_FILES: ${MAX_FILES:-1000}
+      MAX_FILE_MB: ${MAX_FILE_MB:-200}
+      MAX_BATCH_MB: ${MAX_BATCH_MB:-5120}
+      MAX_JOBS: ${MAX_JOBS:-10}
+      CONVERSION_WORKERS: ${CONVERSION_WORKERS:-2}
+      CONVERSION_TIMEOUT: ${CONVERSION_TIMEOUT:-120}
+      RETENTION_SECONDS: ${RETENTION_SECONDS:-3600}
+      MIN_FREE_MB: ${MIN_FREE_MB:-1024}
+    volumes:
+      - photo-data:/data
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    stop_grace_period: 2m
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set your Cloudflare Tunnel token in Coolify}
+    depends_on:
+      converter:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  photo-data:

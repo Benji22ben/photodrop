@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ef">
+  <title>Photo Drop · HEIC to JPG</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/" aria-label="Photo Drop home"><span class="brand-icon">↘</span> Photo Drop</a><span class="tag">HEIC → JPG</span></header>
+  <main>
+    <p class="eyebrow">LESS FRICTION. MORE PHOTOS.</p>
+    <h1>Your photos.<br>A more useful format.</h1>
+    <p class="intro">Drop your HEIC pictures. Get beautiful JPGs.<br>One batch, one ZIP, and you’re done.</p>
+
+    <section class="converter" aria-label="Photo converter">
+      <button id="dropzone" class="dropzone" type="button">
+        <span class="drop-icon" aria-hidden="true">↥</span>
+        <strong>Drop your photos here</strong>
+        <span>or <span class="browse">browse files</span></span>
+        <small id="limits">Loading upload limits…</small>
+      </button>
+      <input id="picker" type="file" accept=".heic,.heif" multiple hidden>
+
+      <div class="settings">
+        <label for="quality">JPG quality <span class="muted">Higher keeps more detail</span></label>
+        <div class="quality-control"><input id="quality" type="range" min="50" max="100" value="90"><output id="quality-value" for="quality">90%</output></div>
+      </div>
+      <div id="selection" class="selection" hidden><div><strong id="selection-count"></strong><span id="selection-size" class="muted"></span></div><button id="clear" class="text-button" type="button">Clear</button></div>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <button id="convert" class="primary" type="button" disabled>Choose photos to get started <span aria-hidden="true">→</span></button>
+
+      <section id="progress-panel" class="progress-panel" aria-label="Batch progress" hidden>
+        <div class="progress-heading"><strong id="phase">Uploading your photos</strong><span id="percentage">0%</span></div>
+        <progress id="progress" max="100" value="0" aria-label="Batch progress"></progress>
+        <p id="progress-detail" class="muted" role="status" aria-live="polite"></p>
+        <a id="download" class="primary download" hidden>Download JPGs as ZIP <span aria-hidden="true">↓</span></a>
+        <button id="retry" class="secondary" type="button" hidden>Retry upload</button>
+        <button id="reset" class="text-button reset" type="button">Cancel & delete batch</button>
+      </section>
+      <details id="file-details" hidden><summary id="file-summary">Your photos</summary><ul id="file-list"></ul></details>
+    </section>
+
+    <div class="benefits"><span><b>01</b> Hundreds at once</span><span><b>02</b> Full resolution</span><span><b>03</b> One ZIP download</span></div>
+    <p id="privacy" class="privacy">Photos are processed on this server and automatically deleted after the retention period.</p>
+  </main>
+  <footer><span>A little tool for a common problem.</span><span>Powered by libheif</span></footer>
+</body>
+</html>

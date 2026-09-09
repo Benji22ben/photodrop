@@ -1,0 +1,12 @@
+services:
+  converter:
+    build: .
+    init: true
+    ports:
+      - "127.0.0.1:${LOCAL_PORT:-8765}:8000"
+    volumes:
+      - photo-data:/data
+    mem_limit: 2g
+    cpus: 2.0
+volumes:
+  photo-data:
