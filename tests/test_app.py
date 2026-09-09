@@ -164,3 +164,66 @@ def test_timeout_and_cancel_kill_decoder(client, tmp_path, monkeypatch):
 def test_disk_guard(client, monkeypatch):
     monkeypatch.setattr(app, 'MIN_FREE_BYTES', 10**20)
     assert client.post('/api/jobs', json={'files': [{'name': 'a.heic', 'size': 1}]}).status_code == 507
+
+
+def test_decoder_diagnostic_is_bounded_and_redacted(client, tmp_path, monkeypatch):
+    failing = tmp_path / 'failing-decoder'
+    failing.write_text(
+        f'#!{sys.executable}\nimport sys\n'
+        'sys.stderr.write("Unsupported image type: " + sys.argv[-2] + "\\n" + "x" * 200000)\n'
+        'sys.stderr.flush()\nsys.exit(1)\n')
+    failing.chmod(0o755)
+    monkeypatch.setattr(app, 'converter', str(failing))
+    job_id = create(client)
+    upload(client, job_id)
+    state = finish(client, job_id)
+    message = state['files'][0]['error']
+    assert state['state'] == 'failed'
+    assert 'Unsupported image type' in message and 'exit 1' in message
+    assert job_id not in message and str(app.DATA) not in message
+    assert len(message) < 1200
+
+
+def test_decoder_signal_does_not_blame_image(client, tmp_path, monkeypatch):
+    failing = tmp_path / 'killed-decoder'
+    failing.write_text(f'#!{sys.executable}\nimport os, signal\nos.kill(os.getpid(), signal.SIGKILL)\n')
+    failing.chmod(0o755)
+    monkeypatch.setattr(app, 'converter', str(failing))
+    job_id = create(client)
+    upload(client, job_id)
+    message = finish(client, job_id)['files'][0]['error']
+    assert 'signal 9' in message and 'memory limit' in message
+
+
+@pytest.mark.parametrize('format,progressive', [('JPEG', False), ('JPEG', True), ('MPO', False)])
+def test_jpeg_with_heif_extension_preserves_bytes_and_metadata(client, monkeypatch, format, progressive):
+    data = io.BytesIO()
+    exif = Image.Exif()
+    exif[274] = 6  # Rotation metadata must survive without pixel re-encoding.
+    options = {'save_all': True, 'append_images': [Image.new('RGB', (48, 32))]} if format == 'MPO' else {}
+    Image.new('RGB', (96, 64), '#264e43').save(data, format, exif=exif, progressive=progressive, **options)
+    original = data.getvalue()
+    job_id = create(client, ['export.heif'], data=original)
+    upload(client, job_id, data=original)
+    # A disguised JPEG must never be sent to the HEIC decoder.
+    monkeypatch.setattr(app, 'converter', '/not-a-real-heic-decoder')
+    state = finish(client, job_id)
+    assert state['state'] == 'done'
+    assert state['files'][0]['preservedJpeg'] is True
+    with zipfile.ZipFile(io.BytesIO(client.get(state['downloadUrl']).content)) as archive:
+        assert archive.namelist() == ['0001-export.jpg']
+        assert archive.read('0001-export.jpg') == original
+
+
+@pytest.mark.parametrize('invalid', [b'\xff\xd8\xffnot-a-jpeg', None])
+def test_invalid_or_truncated_disguised_jpeg_is_rejected(client, invalid):
+    if invalid is None:
+        data = io.BytesIO()
+        Image.new('RGB', (96, 64)).save(data, 'JPEG')
+        invalid = data.getvalue()[:-10]
+    job_id = create(client, ['broken.heif'], data=invalid)
+    upload(client, job_id, data=invalid)
+    state = finish(client, job_id)
+    assert state['state'] == 'failed'
+    assert 'JPEG validation failed' in state['files'][0]['error']
+    assert client.get(f'/api/jobs/{job_id}/download').status_code == 409

@@ -12,7 +12,7 @@ COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
-COPY app.py ./
+COPY app.py prepare_jpeg.py ./
 COPY static ./static
 USER app
 EXPOSE 8000

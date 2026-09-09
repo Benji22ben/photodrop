@@ -43,7 +43,7 @@ function fileList(items) {
     if (item.status === 'failed') row.className = 'failed';
     const name = document.createElement('span'); name.textContent = item.name;
     const status = document.createElement('span');
-    status.textContent = item.error || ({ done: '✓ JPG ready', converting: 'Converting…', uploaded: 'Uploaded', waiting: 'Waiting', uploading: 'Uploading…' }[item.status] || size(item.size));
+    status.textContent = item.error || (item.preservedJpeg ? '✓ Already JPG · preserved' : ({ done: '✓ JPG ready', converting: 'Converting…', uploaded: 'Uploaded', waiting: 'Waiting', uploading: 'Uploading…' }[item.status] || size(item.size)));
     row.append(name, status); fragment.append(row);
   }
   $('file-list').replaceChildren(fragment);

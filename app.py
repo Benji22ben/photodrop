@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import shutil
+import sys
 import time
 import zipfile
 from contextlib import asynccontextmanager
@@ -240,15 +241,44 @@ async def upload(job_id: str, index: int, request: Request, offset: int = 0):
         return {"uploaded": item["uploaded"]}
 
 
+async def read_decoder_error(stream):
+    # Always drain the pipe, including after the capture limit, so a verbose
+    # decoder cannot deadlock or make diagnostics consume unbounded memory.
+    captured = bytearray()
+    while chunk := await stream.read(8192):
+        captured.extend(chunk[:max(0, 4096 - len(captured))])
+    return captured.decode("utf-8", errors="replace")
+
+
+def decoder_failure(returncode, diagnostic, batch):
+    if returncode < 0:
+        return (f"The decoder was stopped by signal {-returncode}. "
+                "Check the container's memory limit and server logs.")
+    # Do not reveal storage paths or the batch's bearer secret in error reports.
+    diagnostic = diagnostic.replace(str(batch.path), "[batch]").replace(batch.id, "[batch]")
+    diagnostic = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", diagnostic)
+    diagnostic = " ".join("".join(c for c in diagnostic if c.isprintable() or c.isspace()).split())
+    if diagnostic:
+        return f"The decoder could not convert this image (exit {returncode}): {diagnostic[:1000]}"
+    return f"The decoder produced no complete JPG (exit {returncode})."
+
+
 async def decode(batch, index):
     folder = batch.path / "output" / str(index)
     folder.mkdir()
     source = batch.path / "input" / f"{index}.heic"
     output = folder / f"{index + 1:04d}-{safe_stem(batch.files[index]['name'])}.jpg"
+    with source.open("rb") as stream:
+        is_jpeg = stream.read(3) == b"\xff\xd8\xff"
+    # Some exports contain JPEG data while retaining a .heic/.heif name.
+    # Validate them, then copy without another lossy encode or metadata changes.
+    command = ([sys.executable, str(ROOT / "prepare_jpeg.py"), str(source), str(output)]
+               if is_jpeg else [converter, "-q", str(batch.quality), str(source), str(output)])
     # No shell and no user-controlled options or paths are passed to the CLI.
     proc = await asyncio.create_subprocess_exec(
-        converter, "-q", str(batch.quality), str(source), str(output),
-        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        *command,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+    diagnostic = asyncio.create_task(read_decoder_error(proc.stderr))
     wait = asyncio.create_task(proc.wait())
     cancel = asyncio.create_task(batch.cancelled.wait())
     try:
@@ -261,12 +291,15 @@ async def decode(batch, index):
             raise RuntimeError("Conversion cancelled." if cancel in done else "Conversion timed out.")
         outputs = sorted(folder.glob("*.jpg"))
         if proc.returncode != 0 or not outputs or any(p.stat().st_size == 0 for p in outputs):
-            raise RuntimeError("Could not decode this image. It may be damaged or unsupported.")
+            raise RuntimeError(decoder_failure(proc.returncode, await diagnostic, batch))
+        if is_jpeg:
+            batch.files[index]["preservedJpeg"] = True
         return outputs
     finally:
         if proc.returncode is None:
             proc.kill()
         await proc.wait()
+        await diagnostic
         cancel.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await cancel

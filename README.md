@@ -107,6 +107,8 @@ Originals are removed after each conversion. Output JPGs are removed after ZIP c
 
 JPEG output keeps full image dimensions, but JPEG is lossy and does not retain HEIC's HDR/alpha/live-photo capabilities. Metadata/color handling follows the installed libheif CLI; this app does not promise EXIF/GPS preservation or removal. A HEIF with multiple top-level images can produce multiple JPGs. Unicode names are sanitized and numbered so files do not overwrite one another.
 
+Some exported files contain JPEG data despite a `.heic` or `.heif` extension. The app detects the JPEG signature, validates the entire image with Pillow in a process subject to the conversion timeout, and includes the original bytes under a `.jpg` name. Those files show **Already JPG · preserved**; their quality and metadata remain unchanged, and the quality slider applies only to actual conversions. Invalid or truncated JPEG data is reported as a failure.
+
 ## Troubleshooting
 
 | Symptom | Check |
