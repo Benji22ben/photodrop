@@ -1,0 +1,16 @@
+# Optional: use only when creating a dedicated tunnel instead of reusing Coolify's.
+# docker compose -f docker-compose.yml -f compose.tunnel.yml up --build -d
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set a token only for this optional dedicated tunnel}
+    depends_on:
+      converter:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

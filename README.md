@@ -26,62 +26,59 @@ uv sync --locked
 uv run uvicorn app:app --host 127.0.0.1 --port 8765
 ```
 
-## Deploy on Coolify through Cloudflare Tunnel
+## Deploy on Coolify using your existing Cloudflare Tunnel
 
-The included `docker-compose.yml` runs the app and `cloudflared` together. Traffic follows:
+The default `docker-compose.yml` runs only the converter. Your existing Cloudflare Tunnel and Coolify proxy handle routing, so **no `TUNNEL_TOKEN` is required for this app**.
 
 ```text
-Browser → HTTPS → Cloudflare → encrypted tunnel → cloudflared
-        → HTTP over the private Docker network → converter:8000
+Browser → HTTPS → Cloudflare → existing tunnel → Coolify proxy → converter:8000
 ```
 
-This tutorial assumes Coolify already manages your server and your domain uses Cloudflare DNS. Allow build downloads and outbound tunnel traffic; Cloudflare documents port **7844** for tunnel connectivity. You do not need to forward a public app port. [Cloudflare setup documentation](https://developers.cloudflare.com/tunnel/setup/)
+### 1. Connect the project to Coolify
 
-### 1. Put this project in a Git repository
+Push this folder to your Git repository, including `Dockerfile`, `uv.lock`, `docker-compose.yml`, `app.py`, and `static/`. Keep `.env`, `data/`, and `.venv/` out of Git.
 
-Create a repository on your preferred Git host and push the contents of **this folder**, including `Dockerfile`, `uv.lock`, `docker-compose.yml`, `app.py`, and `static/`. Keep `.env`, `data/`, and `.venv/` out of Git; `.gitignore` already covers them. The repository can be private.
+In Coolify, add a Git-based Application and select **Docker Compose** as its build pack. Use base directory `/` and Compose location `/docker-compose.yml` when this folder is the repository root. For a repository containing the enclosing `lab` folder, set the base directory to `/heic-to-jpg` and select the Compose file there. [Coolify Compose deployment](https://coolify.io/docs/applications/build-packs/docker-compose)
 
-### 2. Create a dedicated Cloudflare Tunnel
+### 2. Set the converter's domain
 
-In Cloudflare, open **Networking → Tunnels → Create Tunnel**. Some dashboard versions place this under **Zero Trust → Networks → Connectors → Cloudflare Tunnels**. Select the cloudflared connector if asked, and name it `photo-drop`.
+Load/reload the Compose file. In the **converter** service's **Domains** field, enter:
 
-Choose Docker in the setup instructions. Copy **only the token** following `--token` in Cloudflare's example command. Save it for the next step. Coolify will run the included tunnel container, so there is no separate install command to run. The tunnel will stay disconnected until deployment. [Create a tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/)
+```text
+http://photodrop.benjamin-marques-balula.fr:8000
+```
 
-### 3. Add the app in Coolify
+The `:8000` tells Coolify which port to reach inside the container. The browser URL has no port suffix. Do not add a host port mapping. Keep one application instance. Save and deploy. [Coolify domain and port routing](https://coolify.io/docs/knowledge-base/docker/compose)
 
-In your project/environment, choose **New Resource → Application**, then your Git source: public repository, GitHub App, or private repository with a deploy key. Choose the repository, branch, server, and destination. Select **Docker Compose** as the build pack.
+### 3. Reuse your existing tunnel route
 
-Set the base directory to `/` and the Compose location to `/docker-compose.yml` when this project is at the repository root. If you committed the enclosing `lab` folder, use `/heic-to-jpg` as the base directory and select the Compose file inside it.
+If your existing tunnel and DNS already cover `*.benjamin-marques-balula.fr` and forward to Coolify's proxy, there is nothing to add in Cloudflare. Otherwise, add `photodrop.benjamin-marques-balula.fr` to that existing tunnel using the same origin service as your other working Coolify apps. Keep the original Host header so Coolify can select this app.
 
-Load/reload the Compose file in Coolify. In the resource's environment variables, set **`TUNNEL_TOKEN`** to the token from step 2, as a runtime variable. Do not put it into the Dockerfile or Git. Other settings have defaults.
+This assumes your existing tunnel sends HTTP to Coolify's proxy, which is why the Coolify Domains value starts with `http://`. Cloudflare provides HTTPS to visitors. [Coolify's shared tunnel guide](https://coolify.io/docs/integrations/cloudflare/tunnels/all-resource)
 
-Keep both service **Domains** fields empty and remove any automatically generated domain. Leave **Connect to Predefined Network** off. The two services use the same private Compose network; `converter` is their internal DNS name. Keep a single application instance. Save and deploy. Coolify supports private services with no assigned domain or published port. [Compose networking](https://coolify.io/docs/knowledge-base/docker/compose), [Git-based Compose deployment](https://coolify.io/docs/applications/build-packs/docker-compose)
+### 4. Open and test
 
-The app's health check must pass before the tunnel starts. The tunnel reads the secret from its **`TUNNEL_TOKEN` environment variable**. [cloudflared run parameters](https://developers.cloudflare.com/tunnel/advanced/run-parameters/)
+Open **https://photodrop.benjamin-marques-balula.fr**.
 
-### 4. Publish the hostname
-
-Return to your tunnel in Cloudflare. Under **Routes → Add route → Published application** (older UI: **Public Hostnames**), enter:
-
-| Field | Value |
-| --- | --- |
-| Subdomain | `photos` |
-| Domain | Your domain, e.g. `example.com` |
-| Path | Leave empty |
-| Service type | `HTTP` |
-| Service URL | `converter:8000` (or `http://converter:8000` in a single URL field) |
-
-Save the route. Use `converter`, not `localhost`: the connector runs in its own container. Keep the HTTP Host Header override empty. Cloudflare creates the tunnel DNS route; resolve any existing conflicting DNS record for `photos` first. Open **https://photos.example.com** after the tunnel shows Healthy. [Published application routes](https://developers.cloudflare.com/tunnel/setup/)
-
-### 5. Test your deployment
-
-1. Open `https://photos.example.com/healthz`; expect `status: ok`.
+1. Visit `/healthz`; expect `status: ok`.
 2. Drop a few HEIC files, convert, download the ZIP, and open its JPGs.
-3. Drop 300 photos. Watch upload progress, then conversion progress, then download the ZIP. Duplicate filenames receive numbered prefixes.
-4. Include a damaged `.heic` file: successful photos should still download and `conversion-errors.json` should list the failure.
-5. Click **Delete batch & start again** after your download finishes.
+3. Try a batch of hundreds. Duplicate filenames receive numbered prefixes.
+4. Include a damaged `.heic` file: successful conversions still download, with failures listed in `conversion-errors.json`.
+5. Click **Delete batch & start again** after the download finishes.
 
-For a private tool, configure a Cloudflare Access self-hosted application covering the **entire hostname** and allow your email/team. The app itself has no login; without Access anyone who can reach it can create batches. Batch URLs contain random bearer secrets, so only share a URL when you mean to share that batch. [Cloudflare Access setup](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/)
+If you previously loaded the older Compose file with a `tunnel` service, push these updated files, reload the Compose definition in Coolify, and remove the now-unused app-level `TUNNEL_TOKEN` entry if Coolify still shows it. This does not change your existing shared tunnel.
+
+For a private tool, you can protect the whole hostname with a Cloudflare Access application. The app itself has no login. Batch URLs contain random bearer secrets. [Cloudflare Access setup](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/)
+
+### Optional: a separate tunnel
+
+Only use this alternative if you want a dedicated tunnel for Photo Drop. The optional `compose.tunnel.yml` adds a cloudflared container and requires `TUNNEL_TOKEN`. Load both Compose files, supply the token as a runtime environment variable, leave the converter's Coolify Domains field empty, and configure the dedicated tunnel hostname to reach `http://converter:8000` on their shared Docker network.
+
+```sh
+docker compose -f docker-compose.yml -f compose.tunnel.yml up --build -d
+```
+
+For the existing Coolify tunnel setup above, use **only `docker-compose.yml`**. [Cloudflare tunnel setup](https://developers.cloudflare.com/tunnel/setup/)
 
 ### Why large batches work through the tunnel
 
@@ -114,10 +111,10 @@ JPEG output keeps full image dimensions, but JPEG is lossy and does not retain H
 
 | Symptom | Check |
 | --- | --- |
-| Tunnel disconnected | Token in Coolify, tunnel logs, outbound TCP/UDP 7844, DNS resolution |
-| Cloudflare 502 | Route is `http://converter:8000`; converter is healthy; both containers share the stack network |
+| Tunnel disconnected | Your existing tunnel connector and its logs; app-level tokens are only used by the optional dedicated tunnel |
+| Cloudflare 502 | Existing tunnel reaches Coolify's proxy; converter is healthy; its Coolify Domains entry ends with `:8000` |
 | Cloudflare 1033 | Connector has not connected; inspect tunnel status/logs |
-| Redirect loop | Use HTTP to the converter; remove any Coolify domain/proxy route for this app |
+| Redirect loop | When the existing tunnel reaches Coolify over HTTP, use `http://` in the app's Coolify Domains entry |
 | 413 during upload | Zone/proxy upload limits must allow 8 MiB; app also enforces file and batch limits |
 | 403 during upload | Cloudflare Access session/WAF rules, and an empty Host Header override on the tunnel route |
 | 429 / server busy | Delete a completed batch or wait for expired batches to be cleaned |
@@ -125,7 +122,7 @@ JPEG output keeps full image dimensions, but JPEG is lossy and does not retain H
 | Batch disappeared | Retention expired or converter restarted/redeployed |
 | Decoder killed / timeout | Review image validity, container memory, and timeout settings |
 
-Rebuild regularly to receive Debian/libheif updates. The cloudflared image uses `latest`; pin it to a tested release/digest if your deployment policy requires that. Updating/redeploying interrupts temporary jobs.
+Rebuild regularly to receive Debian/libheif updates. The optional dedicated cloudflared image uses `latest`; pin it to a tested release/digest if your deployment policy requires that. Updating/redeploying interrupts temporary jobs.
 
 ## Verification
 

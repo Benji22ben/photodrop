@@ -29,19 +29,5 @@ services:
       - /tmp:size=64m,mode=1777
     stop_grace_period: 2m
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set your Cloudflare Tunnel token in Coolify}
-    depends_on:
-      converter:
-        condition: service_healthy
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-
 volumes:
   photo-data:
